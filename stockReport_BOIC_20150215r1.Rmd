@@ -1,0 +1,163 @@
+stockReport_BOIC
+========================================================
+
+Paul Leiby 02/15/2015
+
+report on selected stocks
+------------------
+
+```{r}
+
+# yahooBriefing function no longer works (no longer supported)
+# http://www.inside-r.org/packages/cran/fimport/docs/yahooBriefing
+library(fImport)
+# syntax: yahooBriefing(query, file = "tempfile", source = NULL, save = FALSE, try = TRUE)
+yahooBriefing("AAPL") #Error: could not find function "yahooBriefing"?
+
+# Documentation on fImport package:
+#  http://cran.at.r-project.org/web/packages/fImport/fImport.pdf
+
+```
+
+### Getting price history (financial time series) from chart.yahoo.com
+
+yahooSeries(symbols, from = NULL, to = Sys.timeDate(), nDaysBack = 366, ...)
+
+yahooImport(query, file = "tempfile", source = NULL,
+    frequency = c("daily", "weekly", "monthly"),
+    from = NULL, to = Sys.timeDate(), nDaysBack = 366,
+    save = FALSE, sep = ";", try = TRUE)
+
+The query string is given as:
+    s=SYMBOL&a=DD&b=MM&c=CCYY&g=d&q=q&z=SYMBOL&x=.csv 
+    
+    where SYMBOL has to replaced by the symbol name of the instrument,
+    and DD, MM, and CCYY by the day, month-1 and century/year when the time series should start.
+
+
+```{r getStockTradeData}
+
+# default for yahooSeries() is to get data for one year, open/high/low/close/volume, returned as a timeSeries object
+# if symbols include more than one ticker, then download will iterate, joining (6) columns for each new symbol
+getPriceData <- function(stockTickerList) {
+  priceData = yahooSeries(stocksWanted)
+  priceData = priceData[,paste0(stocksWanted,".Adj.Close")] # take adjusted closing price (matters over long term if dividends?)
+  names(priceData) = stocksWanted  # simplfy col names
+  return(priceData)
+}
+
+```
+
+### Functions to get selected data from Yahoo Finance Web pages
+Approach uses XML library and function readHTMLTable()
+
+Getting analyst opinions on stocks:
+
+```{r define_getOpinions}
+getUpgradesDowngrades <- function(symbol) {
+  require(XML)
+  require(xts)
+  yahoo.URL.upgradesDowngrades <- "http://finance.yahoo.com/q/ud?"
+  yahoo.URL = yahoo.URL.upgradesDowngrades
+  # load the yahoo finance page as a list of tables
+  tables <- readHTMLTable(paste(yahoo.URL, "s=", symbol, sep = ""), stringsAsFactors=FALSE)
+  
+  # Data <- tables[[11]]  # vulnerable to change in location of data sought
+  # Find position of table(s) with desired string in (row)names
+  targetString = 'Research Firm' # if looking for Upgrades and Downgrades History
+  position = sapply(tables, function(tab) targetString %in% names(tab))
+  Data     = tables[position == TRUE][[1]]  # should be a dataframe
+  Data$Date <- as.Date(Data$Date,'%d-%b-%y')
+  Data <- xts(Data[,-1],order.by=Data[,1])
+  Data
+}
+
+getGrowthEstimates <- function(symbol, statwanted = "Next 5 Years (per annum)") {
+  require(XML)
+  # require(xts)
+  yahoo.URL.analystsEstimates <- "http://finance.yahoo.com/q/ae?"
+  yahoo.URL = yahoo.URL.analystsEstimates
+  # load the yahoo finance page as a list of tables
+  tables <- readHTMLTable(paste(yahoo.URL, "s=", symbol, sep = ""), stringsAsFactors=FALSE)
+  
+  # Data <- tables[[11]]  # vulnerable to change in location of data sought
+  # Find position of table(s) with desired string in (row)names
+  targetString = "Growth Est" # if looking for Est EPS Growth
+  position = sapply(tables, function(tab) targetString %in% names(tab))
+  Data     = tables[position == TRUE][[1]]  # should be a dataframe
+  rownames(Data) <- Data[[targetString]]
+  result = vector(mode="character", length=length(statwanted))
+  for (s in 1:length(statwanted)) {
+    # make sure statwanted is in allowable values
+    if (statwanted[s] %in% c("Current Qtr.","Next Qtr.","This Year","Next Year","Past 5 Years (per annum)","Next 5 Years (per annum)"))
+    {
+      result[s] = Data[statwanted[s],symbol]  # return 5 year growth est
+    }
+    else
+      result[s] = "NA"
+  }
+  return(result)
+}
+
+getAnalystsOpinions <- function(symbol) {
+  require(XML)
+  # require(xts)
+  yahoo.URL.analystsOpinion <- "http://finance.yahoo.com/q/ao?"
+  yahoo.URL = yahoo.URL.analystsOpinion
+  # load the yahoo finance page as a list of tables
+  tables <- readHTMLTable(paste(yahoo.URL, "s=", symbol, sep = ""), stringsAsFactors=FALSE)
+  
+  # Data <- tables[[8]]  # vulnerable to change in location of data sought
+  # Find position of table(s) with desired string in (row)names
+  # targetString = 'Recommendation Summary*' # if looking for opinion
+  # targetString = 'Recommendation Trends' # if looking for opinion trend
+  targetString = 'Mean Recommendation (this week):' # latest average opinion
+  position = sapply(tables, function(tab) targetString %in% names(tab))
+  Data     = tables[position == TRUE][[1]]  # should be a dataframe [but some of the needed data are treated as col names?]
+
+  # names(Data)[2]  # strangely, the mean recommendation for this week is a column name for the resulting dataframe
+  names(Data)  # strangely, the mean recommendation for this week is a column name for the resulting dataframe - return label and value for verification
+  # tables$yfncsumtab is a summary of all data: mean rec is col "V2", row 4, ratings counts in rows 33:37
+  tables$yfncsumtab$V2[c(4,33:37)]  # this could easily fail if website ius altered
+}
+
+```
+
+Test Applying the functions
+--------------
+
+```{r}
+tradeData = yahooSeries(c'AAPL')
+str(tradeData)
+head(tradeData)
+tail(tradeData)
+
+
+getAnalystsOpinions('AAPL')
+getGrowthEstimates('AAPL')
+# stat must be in c("Current Qtr.","Next Qtr.","This Year","Next Year","Past 5 Years (per annum)","Next 5 Years (per annum)")
+getGrowthEstimates('AAPL',"Next Year")
+getGrowthEstimates('AAPL',c("Current Qtr.","Next Qtr.","This Year","Next Year","Past 5 Years (per annum)","Next 5 Years (per annum)"))
+
+```
+
+Apply functions to get data for entire portfolio
+```{r portfolioData}
+# looping for entire portfolio
+stocksWanted = c('EMC','QCOM','AAPL')
+statsWanted = c("Current Qtr.","Next Qtr.","This Year","Next Year","Past 5 Years (per annum)","Next 5 Years (per annum)")
+
+priceData = getPriceData(stocksWanted)
+tail(priceData)
+
+opinions = data.frame(row.names = c("Ave","1","2","3","4",5))
+growthestimates = data.frame(row.names=statsWanted)
+
+for (s in stocksWanted) {
+  opinions[[s]] = getAnalystsOpinions(s)
+  # stat must be in c("Current Qtr.","Next Qtr.","This Year","Next Year","Past 5 Years (per annum)","Next 5 Years (per annum)")
+  growthestimates[[s]] = getGrowthEstimates(s,statsWanted)
+}
+
+```
+

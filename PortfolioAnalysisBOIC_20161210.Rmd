@@ -1,0 +1,122 @@
+---
+title: "Portfolio Analysis - BOIC"
+author: "Paul Leiby"
+date: "December 11, 2016"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## xxx
+```{r setupWorkspace}
+setwd("/Users/pzl/Documents/Misc/BOIC/ClubEducation/StockWebScraping")
+
+```
+
+
+```{r}
+library(xts)
+library(zoo)
+library(PerformanceAnalytics)
+
+library(magrittr)
+library(rvest)
+
+```
+
+```{readHistData}
+
+dataOutputFileName = "BOIC_PERTdata_"
+BOICtickers = c("AAPL", "CMI", "CP", "DY", "EMC",  "GIL", "HAR",
+                "IRBT", "LKQ", "MSM", "QCOM", "R", "WFM" )
+BOICtickersHistorical = c("AAPL", "CBI", "CMI", "EMC",  "GIL", "HAR", "LKQ",
+                 "MSM", "QCOM", "R", "WFM",
+                 "SNCR","PWR", "SWKS", "UNP", "GOOG", "GOOGL" )
+
+tickersWanted = BOICtickers
+```
+
+```{r}
+
+# URLs and queries for Yahoo Finance pages
+# functions to create needed URLs
+url_summary = function(currticker) {
+  paste0("http://finance.yahoo.com/q?s=",currticker,"&ql=1") 
+}
+url_opinion = function(currticker) {
+  paste0("http://finance.yahoo.com/q/ao?s=", currticker, "+Analyst+Opinion")
+}
+url_estimate = function(currticker) {
+  paste0("http://finance.yahoo.com/q/ae?s=", currticker, "+Analyst+Estimates")
+}
+
+as.numeric.pct <- function (pctstring) {
+  # Expect a numeric string ending in a percentage symbol
+  # Return the string without the percent symbol
+  # as.numeric(sub("%","",pctstring))/100
+  as.numeric(sub("%","",pctstring))
+}
+```
+
+Extract Historical Price Data if Wanted
+
+``` {r}
+# Download URLs for historical price data, 
+# Daily, Mar 27, 2014 to Oct 10, 2015
+# http://real-chart.finance.yahoo.com/table.csv?s=GOOG&d=9&e=10&f=2015&g=d&a=2&b=27&c=2014&ignore=.csv
+# Daily, Mar 27, 2014 to Oct 9, 2015
+# http://real-chart.finance.yahoo.com/table.csv?s=GOOG&a=00&b=1&c=1960&d=08&e=9&f=2015&g=d&ignore=.csv
+# a = startMonthnum-1 # 2 digits, 00 = Jan
+# b = startDay        # 1 or 2 digits, 1 = 1
+# c = startYear       # digits
+# d = startMonthnum-1 # 2 digits, 00 = Jan 
+# e = startDay        # 1 or 2 digits, 1 = 1
+# f = endYear
+# s = ticker
+# g = period          # d for daily, w = weekly, m = monthly, v = dividends_only
+# http://finance.yahoo.com/q/hp?s=GOOG&a=00&b=1&c=1960&d=08&e=9&f=2015&g=d
+
+# format(Sys.time(), "%a %b %d %X %Y")
+# format(Sys.time(), "%a %b %d %H:%M:%S %Y")
+
+getPriceHistory <- function(currticker = "", startDate = "1960-01-01", endDate="") {
+  # expect dates as yyyy-mm-dd
+  # default to end with current date
+  if (endDate == "") endDate = format(Sys.time(), "%Y-%m-%d")
+  ql = list() # query lisrt
+  #y,m,d = 1,2,3
+  ql[1:3]= strsplit(startDate,split = "-")[[1]]  # yr, month, day
+  ql[4:6]= strsplit(endDate,  split = "-")[[1]]
+  priceHistURL = paste0(
+    "http://real-chart.finance.yahoo.com/table.csv?s=", currticker,
+      "&a=", "00", "&b=", ql[3], "&c=", ql[1], 
+      "&d=", "08", "&e=", ql[6], "&f=", ql[4],
+      "&g=d&ignore=.csv")
+  return(read.csv(url(priceHistURL)))
+}
+
+# priceData = getPriceHistory("AAPL")
+```
+
+
+```{r cars}
+
+
+# mymanagers=read.csv("/path/to/file/mymanagers.csv",row.names=1),
+data("managers") 
+dim(managers)
+
+``
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

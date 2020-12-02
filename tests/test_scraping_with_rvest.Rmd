@@ -1,0 +1,138 @@
+---
+title: "test_scraping_with_rvest"
+author: "Paul N. Leiby"
+date: "12/2/2020"
+output: html_document
+---
+
+
+### `rvest` Key functions
+
+Source: [github/tidyverse/rvest](https://github.com/tidyverse/rvest)
+
+Once you have read (and parsed) a HTML document with `read_html()`, you can:
+
+- Select parts of a document using CSS selectors: 
+  - `html_nodes(doc, "table td")` 
+  - (or `html_nodes(doc, xpath = "//table//td")`, if you’re a glutton for punishment, using XPath selectors.)
+  
+  If you haven’t heard of [selectorgadget`], make sure to read [vignette("selectorgadget")](https://cran.r-project.org/web/packages/rvest/vignettes/selectorgadget.html) to learn about it.
+
+- Extract components with 
+  - `html_name()` (the name of the tag), 
+  - `html_text()` (all text inside the tag), 
+  - `html_attr()` (contents of a single attribute) and 
+  - `html_attrs()` (all attributes).
+
+- (You can also use `rvest` with XML files: parse with `xml()`, then extract components using 
+  - `xml_name()`
+  - `xml_node()`, 
+  - `xml_attr()`, 
+  - `xml_attrs()`,
+  - `xml_text()`,
+
+- Parse tables into data frames with `html_table()`.
+
+- Extract, modify and submit forms with 
+  - `html_form()`, 
+  - `set_values()` and 
+  - `submit_form()`.
+
+- Detect and repair encoding problems with 
+  - `guess_encoding()` and 
+  - `repair_encoding()`.
+
+- Navigate around a website as if you’re in a browser with 
+  - `html_session()`, 
+  - `jump_to()`, 
+  - `follow_link()`, 
+  - `back()`,
+  - `forward()`, 
+  - `submit_form()` and so on.
+
+To see examples of these function in use, check out the demos.
+
+## Example Application: Scraping multiple web pages with Rvest and For loop
+
+Source: [Scraping multiple web pages with Rvest and For loop](https://community.rstudio.com/t/scraping-multiple-web-pages-with-rvest-and-for-loop/89661/2)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(rvest)
+#> Loading required package: xml2
+
+reviews <- character()
+
+for (reviews_pages in 1:9) {
+
+  Link = paste0("https://www.amazon.com/ASICS-Mens-Gel-Nimbus-Running-Shoes/product-reviews/B07X1W4VHK/ref=cm_cr_arp_d_paging_btm_next_2?ie=UTF8&reviewerType=all_reviews&pageNumber=", reviews_pages)
+
+  pages = read_html(Link) # read the page
+  page_review <-
+    pages %>%
+    html_nodes(".review-text-content span") %>% # extract nodes matching this css selector
+    html_text() # extract the text from selected nodes (trim = T to trim leading/trailing spaces)
+
+  reviews <- c(reviews, page_review)
+
+  print("Scraping reviews in progress")
+}
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+#> [1] "Scraping reviews in progress"
+```
+
+```{r}
+reviews
+#>  [1] "\n  Loved the Gel-Nimbus 18, but have been disappointed with the 19, 20 and 21. Decided to try the 22, found it to be about a half-size too small. Sent it back and got a half-size larger, now very pleased. More room in the front and that old familiar gel comfort.\n"
+#>  [2] "\n  Cushioning has never been the same since the Nimbus 17. Now with the 22, it's finally back!Hopefully Asics will keep it that way.\n"
+#>  [3] "\n  I loved the nimbus 16,And had about 6 of them.Hated the 17, 18, 19, 20 and 21.They were all very uncomfortable.Glad to learn that the 22 are similar to the 16.\n"
+#>  [4] "\n  It cost too much for what you get. I have an Asics Quantum180 4 too. The Quantum 180 4 fits better and is more comfortable than the Nimbus 22. Plus I bought the Quantum 180 4 for much less at about $50 where this one cost me $150. Big difference and not worth it. My big toe kept on hitting the tip. I bought the same size as my other Asics sneaker. But this thing seems to be higher at the heel and lower by the toes. So your feet slide down towards the front tip of the sneaker. Not a good design.\n"
+#>  [5] "\n  I've been a big nimbus fan for many years, owning the 16,17,18,19,20 &21. The Nimbus 22 is the most comfortable model to date. It has the most cushion and comfort when compared to the earlier models. I highly recommend it, you won't be disappointed.\n"
+#>  [6] "\n  I have been a loyal Asics buyer for a few years now. I have a wide foot and I need something for under pronation so the Nimbus and Cumulus are the 2 models I buy. I have been a little disappointed by every Nimbus since the 18 which was my favorite by far, so good I owned 3 of them. The 19s were kinda bad, 20s were okay and 21s were decent. The 22s are excellent, these are my favorite since the 18. They do run a little smaller, similar to the 19s but once broken in they are going to be like a  glove. The heel cups are nice and snug and good room in the toes. And for once the 4e comes in 2 very cool designs... I got one of each and they're the best looking Nimbus yet in my opinion. I am not a runner but a walker and these 22s are like walking on a cloud but they are not sloppy soft like the last Cumulus model was. I'd say the 22s are the best model since the 18 and if you like Asics they will please you.\n"
+#>  [7] "\n  First nimbus since the 18 to  be special. Happy to throw out my worn out 21.I have also bought every number since the 18 and nothing has been exceptionally good until the 22.Great support and very comfortable.\n"
+#>  [8] "\n  I go way back with the Asics Nimbus model. Unfortunately, they lost their way with fit and cushioning at some point a few versions back (I’m looking at you version19), so I moved to other brands (New Balance, Hoka One One and Brooks). Reviews here and elsewhere said this updated model was improved (as in back to normal) with a wider toe box, wider fit over all and improved cushioning. I’m happy to say, these deliver as promised. The gel insert has always been my favorite feature in ASICS and no amount of foam can replicate the energy it provides. I’m running 50 road miles a week on average and try to rotate shoes with some max cushioning models I have, but keep going back to these as my everyday now. I use these strictly for running and keep track of my mileage. I normally get 300-500 miles out of a pair of running shoes before they lose their usable cushioning, then I retire them.  I let my body tell me when it’s time. First hint of an ache or pain in my knees, hips or back and I take note that it’s time to break in a new pair. I have put 400 miles on this pair and am at 350 on my second pair.Anyways I just bought another pair because they were $30 off and this model in particular is working for me and feels natural. My only minor complaint, as it is with most running shoes, is I take a wide 2E and the colors are always limited in the wide sizes.\n"
+#>  [9] "\n  ASICS Gel Nimbus continues to be a great shoe. My first Nimbus was a 12. Every model has been great. Every pair I have owned I bought one size larger than my normal shoe size. The 22 feels good and seems lighter than some of the previous models.  I am normally a barefoot flip flop person, but when it comes to running shoes, the Nimbus provides the amount of support and comfort I need for my 200 lb frame. Feet, shins, and knees always feel good after a run.\n"
+#> [10] "\n  The pros on this are few. I really liked the color of this shoe and its appearanceAfter that, there's not much to write home about. Shoes are a bit narrow/snug. There is a lot of shock absorbing rubber at the sole, but the inside of the shoe was a nightmare for my heels. I have plantar issues, and the heels in these shoes seemed designed to remind me of that with every step. As someone else mentioned in another review, it seems as though the heel in the left shoe is particularly painful. For the price, the upper is poorly finished. My $40 skechers were way more comfortable and durable (I just wouldn't run in them, as their soles leave something to be desired). I bought these shoes, because I needed something that would be easy on my heels. These are definitely not that, and I suspect that the positive reviews are from folks who have no pre-existing issues with their feet.\n"
+#>  [ reached getOption("max.print") -- omitted 80 entries ]
+```
+
+## Revised Approach
+
+```{r}
+library(rvest) # for html scraping and extraction
+library(glue) # for interpreted string literals: embed R expressions in curly braces in strings
+library(purrr) # for mapping fns over lists/vectors, functional programming (masks rvest::pluck)
+library(tibble) # for enframe
+```
+
+
+```{r}
+# Set up a URL for each of the 9 pages
+urls <- 
+  glue("https://www.amazon.com/ASICS-Mens-Gel-Nimbus-Running-Shoes/product-reviews/B07X1W4VHK/ref=cm_cr_arp_d_paging_btm_next_2?ie=UTF8&reviewerType=all_reviews&pageNumber={1:9}") # produces char vector
+
+# Define the worker function
+review_text_scraper <- function(url) {
+  read_html(url) %>% # read/parse page
+    html_nodes(".review-text-content span") %>% # extract nodes matching this css selector
+    html_text() %>% # extract the text from selected nodes (trim = T to trim leading/trailing spaces)
+    enframe(name = "id", value = "text") # vector or list to dataframe
+}
+
+# Iterate over the urls, applying the function each time
+reviews2 <- map_dfr(.x = urls, 
+                    .f = review_text_scraper,
+                    .id = "page") # map over list of urls (rather than for loop), return dataframe
+reviews2
+
+```
+

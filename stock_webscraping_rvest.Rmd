@@ -1,0 +1,236 @@
+---
+title: "stock_webscraping_rvest.Rmd"
+output: html_document
+---
+
+- Created by Paul N. Leiby
+- Date modified: 2016-08-14
+
+Uses the rvest library.
+[rvest: easy web scraping with R](http://blog.rstudio.org/2014/11/24/rvest-easy-web-scraping-with-r/)
+
+```{r}
+library(magrittr)
+library(rvest)
+
+setwd("/Users/pzl/Documents/Misc/BOIC/ClubEducation/StockWebScraping")
+
+dataOutputFileName = "BOIC_PERTdata_"
+BOICtickers = c("AAPL", "CMI", "CP", "DY", "EMC",  "GIL", "HAR",
+                "IRBT", "LKQ", "MSM", "QCOM", "R", "WFM" )
+BOICtickersHistorical = c("AAPL", "CBI", "CMI", "EMC",  "GIL", "HAR", "LKQ",
+                 "MSM", "QCOM", "R", "WFM",
+                 "SNCR","PWR", "SWKS", "UNP", "GOOG", "GOOGL" )
+
+
+# dataOutputFileName = "StockPicks_"
+StockPicks20160409tickers = c("AIV", "AVB", "BXP",  "CPT", "CXW", "DDR", "DLR", "DRE",
+                              "EQR","ESS","NLY","EXR","FRT","FCH","FCE-A","GEO","GGP",
+                              "HCP","HR",
+                              "HPT","HST","KIM","LPT","MAC","CLI","PEI","PLD","PSA","O",
+                              "RHP","SLG","SPG","UDR","VTR","VNO","WPC","WRE","WRI","HCN")
+StockPicks20160410tickers = c("IRBT", "GOOG", "GOOGL", "TOSYY", "GDFYF", "DDD", "ARCM")
+StockPicks20151018tickers = c("TRIP", "GOOGL", "BABA",  "AMZN", "BIDU", "EBAY", "Z")
+#StockPicks20151018tickers = c("BABA","GOOGL")
+
+#tickersWanted = BOICtickers
+tickersWanted = StockPicks20160410tickers
+
+
+# URLs and queries for Yahoo Finance pages
+# functions to create needed URLs
+url_summary = function(currticker) {
+  paste0("http://finance.yahoo.com/q?s=",ticker,"&ql=1") 
+}
+url_opinion = function(currticker) {
+  paste0("http://finance.yahoo.com/q/ao?s=", ticker, "+Analyst+Opinion")
+}
+url_estimate = function(currticker) {
+  paste0("http://finance.yahoo.com/q/ae?s=", ticker, "+Analyst+Estimates")
+}
+
+as.numeric.pct <- function (pctstring) {
+  # expect a numeric string ending in a percentage symbol
+  # as.numeric(sub("%","",pctstring))/100
+  as.numeric(sub("%","",pctstring))
+}
+
+```
+
+To extract the desired elements, we start with [selectorgadget](http://selectorgadget.com/) to figure out which css selector matches the data we want: strong span. (If you haven’t heard of selectorgadget, make sure to read vignette("selectorgadget") – it’s the easiest way to determine which selector extracts the data that you’re interested in.) 
+
+- We use html_node() to find the first node that matches that selector, extract its contents with html_text(), and convert it to numeric with as.numeric():
+
+- Can extract the tag names with html_tag(), text with html_text(), a single attribute with html_attr() or all attributes with html_attrs().
+
+- Detect and repair text encoding problems with guess_encoding() and repair_encoding().
+
+- Navigate around a website as if you’re in a browser with html_session(), jump_to(), follow_link(), back(), and forward(). Extract, modify and submit forms with html_form(), set_values() and submit_form().
+
+```{r defNodesWanted}
+# Here we set up the strings that describe html "nodes", where
+#  desired info in located on target web pages
+#  The content of the node strings is determined manually with the selectorgadget browser add-in.
+nodeForCurrentPrice = function(currticker) {
+  return(paste0("#yfs_l84_",tolower(currticker)))
+}
+nodeForAnalystsRecommendation = ".equaltable:nth-child(2) tr:nth-child(1) .yfnc_tabledata1"
+nodeForAnalystsRecCountCurrMonth = "th+ .yfnc_tabledata1"
+nodeForAnalystsRecCountLastMonth = ".yfnc_datamodoutline1 table .yfnc_tabledata1:nth-child(3)"
+
+nodeFor5YrGrowthEst = 
+  ".yfnc_tableout1~ .yfnc_tableout1 tr:nth-child(7) .yfnc_tablehead1+ .yfnc_tabledata1"
+nodeForAllGrowthEsts = 
+  ".yfnc_tableout1:nth-child(11) .yfnc_tablehead1+ .yfnc_tabledata1"
+GrowthEstsNames = c("GrowthCurrentQtr", "GrowthNextQtr", "GrowthThisYear",
+                    "GrowthNextYear", "GrowthPast5Years", "GrowthNext5Years",
+                    "PE_Ratio", "PEG_Ratio")
+nodeForAllGrowthEstsWithLabels = 
+  ".yfnc_tableout1:nth-child(11) td.yfnc_tablehead1 , .yfnc_tableout1:nth-child(11) .yfnc_tablehead1+ .yfnc_tabledata1" # 2-d table
+```
+
+Establish function to get data from Yahoo Finance for individual stock ticker
+-----------------------------
+
+```{r def_getDataForOneTicker}
+# html_node() get first match, html_nodes() gets all matches
+# html_text() extracts text from node
+
+getDataForOneTicker <- function(currticker) {
+  # get a range of info on stock from Yahoo Finance pages for given ticker,
+  # return as an (unlabeled) vector
+  
+  # read in pages (as html), only once and store
+   stockSummary <- read_html(url_summary(ticker))
+   stockOpinion <- read_html(url_opinion(ticker))
+   stockEstimate <- read_html(url_estimate(ticker))
+
+  # get average recommendation from Analysts Opinion page
+  nodeWanted = nodeForAnalystsRecommendation
+  aveRecommendation = stockOpinion %>% 
+    html_node(nodeWanted) %>%
+    html_text() # %>% as.numeric()
+  
+  # get count of each recommendation from Analysts Opinion page - Curr Month
+  nodeWanted = nodeForAnalystsRecCountCurrMonth
+  allRecommendationsCurrM = stockOpinion %>% 
+    html_nodes(nodeWanted) %>%
+    html_text() # %>% as.numeric()
+
+  # get count of each recommendation from Analysts Opinion page - Last Month
+  nodeWanted = nodeForAnalystsRecCountLastMonth
+  allRecommendationsLastM = stockOpinion %>% 
+    html_nodes(nodeWanted) %>%
+    html_text() # %>% as.numeric()
+
+  # get 5-year growth estimate from Analysts Estimate page
+  nodeWanted = nodeFor5YrGrowthEst
+  growthEstimate = stockEstimate %>%
+    html_node(nodeWanted) %>%
+    html_text() # %>% as.numeric.pct()
+  
+  # get vector of past growth rates and future growth estimates from Analysts Estimate page
+  nodeWanted = nodeForAllGrowthEsts
+  allGrowthEstimates = stockEstimate %>%
+    html_nodes(nodeWanted) %>%
+    html_text() # %>% as.numeric.pct()
+
+  # get 2-d table of past growth rates and future growth est from Analysts Estimate page
+  nodeWanted = nodeForAllGrowthEstsWithLabels
+  allGrowthEstimatesWithLabels = stockEstimate %>%
+    html_nodes(nodeWanted) %>%
+    html_text() 
+  allGrowthEstimatesWithLabels  = matrix(allGrowthEstimatesWithLabels,ncol=2, byrow = T) 
+  # allGrowthEstimatesWithLabels[,2] = as.numeric.pct(allGrowthEstimatesWithLabels[,2])
+
+  # get current price from Summary Page  
+  nodeWanted = nodeForCurrentPrice(ticker)
+  currentPrice = stockSummary %>%
+    html_node(nodeWanted) %>%
+    html_text() # %>% as.numeric()
+  
+  allRecCurrM = paste0(allRecommendationsCurrM,collapse = ',')
+  allRecLastM = paste0(allRecommendationsLastM,collapse = ',')
+
+  return(c(currentPrice, growthEstimate, aveRecommendation, allRecCurrM, allRecLastM, allRecommendationsCurrM, allRecommendationsLastM))
+}
+
+```
+
+Now loop over stocks in the portfolio list, developing data frame of info
+-------------
+
+```{r loopForStockInfo}
+StockPicks20160410tickers = c("IRBT", "GOOG", "GOOGL", "DDD", "SSYS")  # ARCM
+tickersWanted = StockPicks20160410tickers
+
+# stockInfo = data.frame(matrix(ncol = 15, nrow = length(tickersWanted)))
+stockInfo <- data.frame(setNames(replicate(15,character(0), simplify = F), 
+                                 c("Price", "EPSgrowth", "AveRec", "RecCurrM", "RecLastM", 
+                                   paste0(rep("Rec1CurrM",5),1:5), paste0(rep("Rec1LastM",5),1:5))
+                                 ))
+stockInfoL = list()
+
+for (ticker in tickersWanted) {
+  #stockInfo = rbind(stockInfo,getDataForOneTicker(ticker))
+  stockInfoL[ticker] = list(getDataForOneTicker(ticker))
+  print(stockInfoL[ticker])
+}
+stockInfoL["vars"] = list(c("Price", "EPSgrowth", "AveRec", "RecCurrM", "RecLastM",
+                            paste0(rep("Rec1CurrM",5),1:5), paste0(rep("Rec1LastM",5),1:5)))
+#rownames(stockInfo) = tickersWanted
+
+# display the result table
+stockInfoL
+
+# save to a csv file, with date-stamp in name
+write.csv(stockInfoL, file = paste0(dataOutputFileName,format(Sys.time(), "%Y-%m-%d"),".csv"))
+```
+
+Extract Historical Price Data if Wanted
+
+``` {r}
+# Download URLs for historical price data, 
+# Daily, Mar 27, 2014 to Oct 10, 2015
+# http://real-chart.finance.yahoo.com/table.csv?s=GOOG&d=9&e=10&f=2015&g=d&a=2&b=27&c=2014&ignore=.csv
+# Daily, Mar 27, 2014 to Oct 9, 2015
+# http://real-chart.finance.yahoo.com/table.csv?s=GOOG&a=00&b=1&c=1960&d=08&e=9&f=2015&g=d&ignore=.csv
+# a = startMonthnum-1 # 2 digits, 00 = Jan
+# b = startDay        # 1 or 2 digits, 1 = 1
+# c = startYear       # digits
+# d = startMonthnum-1 # 2 digits, 00 = Jan 
+# e = startDay        # 1 or 2 digits, 1 = 1
+# f = endYear
+# s = ticker
+# g = period          # d for daily, w = weekly, m = monthly, v = dividends_only
+# http://finance.yahoo.com/q/hp?s=GOOG&a=00&b=1&c=1960&d=08&e=9&f=2015&g=d
+
+# format(Sys.time(), "%a %b %d %X %Y")
+# format(Sys.time(), "%a %b %d %H:%M:%S %Y")
+
+getPriceHistory <- function(currticker = "", startDate = "1960-01-01", endDate="") {
+  # expect dates as yyyy-mm-dd
+  # default to end with current date
+  if (endDate == "") endDate = format(Sys.time(), "%Y-%m-%d")
+  ql = list() # query lisrt
+  #y,m,d = 1,2,3
+  ql[1:3]= strsplit(startDate,split = "-")[[1]]  # yr, month, day
+  ql[4:6]= strsplit(endDate,  split = "-")[[1]]
+  priceHistURL = paste0(
+    "http://real-chart.finance.yahoo.com/table.csv?s=", currticker,
+      "&a=", "00", "&b=", ql[3], "&c=", ql[1], 
+      "&d=", "08", "&e=", ql[6], "&f=", ql[4],
+      "&g=d&ignore=.csv")
+  return(read.csv(url(priceHistURL)))
+}
+
+# priceData = getPriceHistory("AAPL")
+```
+
+Read SSG data
+
+```{r readSSG}
+SSGfields = read.csv(file = "SSGDBfields.csv",header = F)
+SSG_AAPL = readLines("AAPL_20151018.ssg")
+```
+
