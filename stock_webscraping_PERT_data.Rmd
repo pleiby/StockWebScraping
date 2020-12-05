@@ -7,7 +7,9 @@ output: html_document
 - Date modified: 2017-07-16
 
 Uses the rvest library.
-[rvest: easy web scraping with R](http://blog.rstudio.org/2014/11/24/rvest-easy-web-scraping-with-r/)
+[rvest: easy web scraping with R (Wickham 2014)](http://blog.rstudio.org/2014/11/24/rvest-easy-web-scraping-with-r/)
+[SelectorGadget vignette (H. Wickham)](https://cran.r-project.org/web/packages/rvest/vignettes/selectorgadget.html)
+[`rvest` Key functions](https://github.com/tidyverse/rvest)
 
 ```{r}
 library(tidyverse)
@@ -16,8 +18,11 @@ library(tidyverse)
 library(rvest)
 ```
 
+This scraping routines applies over lists of stock tickers.
+
 ```{r}
 dataOutputFileName <- "BOIC_PERTdata_"
+
 BOICtickers <- c(
   "AMZN", "GIII",
   "GOOG", "GPK",
@@ -53,6 +58,8 @@ StockPicks20151018tickers <- c("TRIP", "GOOGL", "BABA", "AMZN", "BIDU", "EBAY", 
 
 ```
 
+We select one of the lists of stock tickers
+
 ```{r}
 tickersWanted <- BOICtickers
 # tickersWanted = StockPicks20160410tickers
@@ -70,9 +77,9 @@ url_analysis <- function(currticker) {
   paste0("https://finance.yahoo.com/quote/", currticker, "/analysis?p=", currticker)
 }
 
-url_analysts <- function(currticker) {
-  paste0("https://finance.yahoo.com/quote/", currticker, "/analysts?p=", currticker)
-}
+# url_analysts <- function(currticker) { # **superseded** - no # longer functions
+#   paste0("https://finance.yahoo.com/quote/", currticker, # "/analysts?p=", currticker)
+# }
 
 # url_opinion = function(currticker) {
 #   paste0("http://finance.yahoo.com/q/ao?s=", currticker, "+Analyst+Opinion")
@@ -89,30 +96,61 @@ as.numeric.pct <- function(pctstring) {
 }
 ```
 
-To extract the desired elements, we start with [selectorgadget](http://selectorgadget.com/) to figure out which css selector matches the data we want: strong span. (If you haven’t heard of selectorgadget, make sure to read vignette("selectorgadget") – it’s the easiest way to determine which selector extracts the data that you’re interested in.) 
+To extract the desired elements, use [selectorgadget](http://selectorgadget.com/) to figure out which css selector matches the data we want: strong span.
 
-- We use html_node() to find the first node that matches that selector, extract its contents with html_text(), and convert it to numeric with as.numeric():
+- We use
+  - `html_node()` to find the first node that matches that selector, 
+  - `html_text()` to extract its contents, and 
+  - `as.numeric()` convert it to numeric:
 
-- Can extract the tag names with html_tag(), text with html_text(), a single attribute with html_attr() or all attributes with html_attrs().
+- Can extract 
+  - the tag names with `html_tag()`, 
+  - text with `html_text()`, 
+  - a single attribute with `html_attr()` or 
+  - all attributes with `html_attrs()`.
 
-- Detect and repair text encoding problems with guess_encoding() and repair_encoding().
+- Detect and repair text encoding problems with `guess_encoding()` and `repair_encoding()`.
 
-- Navigate around a website as if you’re in a browser with html_session(), jump_to(), follow_link(), back(), and forward(). Extract, modify and submit forms with html_form(), set_values() and submit_form().
+- Navigate around a website as if you’re in a browser with 
+  - `html_session()`, 
+  - `jump_to()`, 
+  - `follow_link()`, 
+  - `back()`, and 
+  - `forward()`. 
+
+- Extract, modify and submit forms with 
+  - `html_form()`, `set_values()` and `submit_form()`.
 
 ```{r defNodesWanted}
 # Here we set up the strings that describe html "nodes", where
 #  desired info in located on target web pages
 #  The content of the node strings is determined manually with the selectorgadget browser add-in.
-nodeForCurrentPrice <- function(currticker) {
-  return(paste0("#yfs_l84_", tolower(currticker)))
+# <title>AMZN 3,193.23 -10.30 -0.32% : Amazon.com, Inc. - Yahoo Finance</title>
+# <span class="Trsdu(0.3s) Fw(b) Fz(36px) Mb(-4px) D(ib)" data-reactid="50">3,203.53</span>
+nodeForSummary_CurrentPrice <- function(currticker) {
+  # return(paste0("#yfs_l84_", tolower(currticker))) # ??? .Trsdu(0\.3s) ???
+  return(".D(ib)")
 }
 
 nodeForAnalystsRecommendation <- ".equaltable:nth-child(2) tr:nth-child(1) .yfnc_tabledata1"
 nodeForAnalystsRecCountCurrMonth <- "th+ .yfnc_tabledata1"
 nodeForAnalystsRecCountLastMonth <- ".yfnc_datamodoutline1 table .yfnc_tabledata1:nth-child(3)"
 
+# Recommendation Rating on Analysis Page
+# Look for 'aria-label="N.N on a scale of 1 to 5"'; 'data-test="rec-rating-text"'
+# <div class="B(8px) Pos(a) C(white) Py(2px) Px(0) Ta(c) Bdrs(3px) Trstf(eio) Trsde(0.5) Arrow South Bdtc(i)::a Fw(b) Bgc($c-fuji-teal-2-b) Bdtc($c-fuji-teal-2-b)" data-test="rec-rating-txt" tabindex="0" aria-label="1.7 on a scale of 1 to 5, where 1 is Strong Buy and 5 is Sell" style="width: 30px; left: calc(17.5% - 15px);">1.7</div>
+nodeForAnalysisRecommendationRating <- ".Bdtc($c-fuji-teal-2-b)" 
+# Recommendation counts appear to be hidden in images
+
+# Price on Analysis Page
+# <span class="Trsdu(0.3s) Fw(b) Fz(36px) Mb(-4px) D(ib)" data-reactid="50">3,203.53</span>
+nodeForAnalysis_Price <- ""
+
+# Growth Rates on Analysis Page
+# Following are now in tables, easily scraped to dataframes
 nodeFor5YrGrowthEst <-
   ".yfnc_tableout1~ .yfnc_tableout1 tr:nth-child(7) .yfnc_tablehead1+ .yfnc_tabledata1"
+nodeFor5YrGrowthEst2 <-".Py(10px)"
 nodeForAllGrowthEsts <-
   ".yfnc_tableout1:nth-child(11) .yfnc_tablehead1+ .yfnc_tabledata1"
 GrowthEstsNames <- c(
@@ -126,6 +164,55 @@ nodeForAllGrowthEstsWithLabels <-
 
 Establish function to get data from Yahoo Finance for individual stock ticker
 -----------------------------
+
+```{r}
+currticker = "AMZN"
+```
+
+Read tables in page and explore
+
+https://www.pluralsight.com/guides/advanced-web-scraping-with-r
+
+```{r extract_html_tables}
+  # webpage <- read_html(url)
+  stockAnalysis <- read_html(url_analysis(currticker))
+  allTables <- html_nodes(stockAnalysis, css = "table") # list of matching nodes, "xml_nodeset"
+  # oneTable <- html_table(allTables[[1]]) # convert first to dataframe
+  #  oneTable
+  # class(allTables)
+  allTablesDf <- html_table(allTables) # convert to list of all tables, each as a dataframe
+  allTablesDf[[1]]
+  allTablesDf[[6]]
+```
+
+```{r}
+allTablesDf[[6]][[currticker]][1] # Growth Estimates; Current Qtr.
+names(allTablesDf)
+```
+
+```{r}
+.D(ib)
+nodeForSummary_CurrentPrice
+
+```
+
+```{r}
+# Extracting sub URLs
+# Here, tile-box is a parent class which holds the content in the nested class.
+# First, go inside the sub-class using html_children() and then fetch the URLs to each Skill page
+# extract linked html pages
+subURLs <- stockAnalysis %>%
+  html_nodes('*') %>% # all nodes
+  # html_children() %>% 
+  html_attr('href')
+subURLs <- subURLs[!is.na(subURLs)]
+subURLs
+```
+
+```{r}
+
+```
+
 
 ```{r}
 getOpinionInfo <- function(currticker) {
@@ -165,15 +252,13 @@ getDataForOneTicker <- function(currticker) {
   
   stockAnalysis <- read_html(url_analysis(currticker))
 
-  stockEstimate <- read_html(url_estimate(currticker))
-
-  # get 5-year growth estimate from Analysts Estimate page
-  nodeWanted <- nodeFor5YrGrowthEst
-  growthEstimate <- stockEstimate %>%
+  # get 5-year growth estimate from Analysis page
+  nodeWanted <- nodeFor5YrGrowthEst2
+  growthEstimate <- stockAnalysis %>%
     html_node(nodeWanted) %>%
     html_text() # %>% as.numeric.pct()
 
-  # get vector of past growth rates and future growth estimates from Analysts Estimate page
+  # get vector of past growth rates and future growth estimates from Analysis page
   nodeWanted <- nodeForAllGrowthEsts
   allGrowthEstimates <- stockEstimate %>%
     html_nodes(nodeWanted) %>%
@@ -188,7 +273,7 @@ getDataForOneTicker <- function(currticker) {
   # allGrowthEstimatesWithLabels[,2] = as.numeric.pct(allGrowthEstimatesWithLabels[,2])
 
   # get current price from Summary Page
-  nodeWanted <- nodeForCurrentPrice(currticker)
+  nodeWanted <- nodeForSummary_CurrentPrice(currticker)
   currentPrice <- stockSummary %>%
     html_node(nodeWanted) %>%
     html_text() # %>% as.numeric()
