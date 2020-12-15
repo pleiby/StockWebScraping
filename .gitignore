@@ -6,3 +6,4 @@ ssgs/*
 oldversions/*
 pert/*
 data/StockPicks*
+*.html
