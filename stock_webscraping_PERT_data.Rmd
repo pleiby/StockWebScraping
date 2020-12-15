@@ -1,19 +1,43 @@
 ---
 title: "stock_webscraping_PERT_data.Rmd"
-output: html_document
+author: "Paul N. Leiby"
+date: "12/7/2020"
+output:
+  slidy_presentation:
+    footer: "BOIC PERT data"
+    theme: cerulean
+    highlight: tango
+  beamer_presentation:
+    colortheme: dolphin
+    fonttheme: structurebold
+    theme: AnnArbor
+  html_document: default
+  word_document:
+    df_print: kable
+    fig_caption: yes
+    fig_height: 5
+    fig_width: 7
+  ioslides_presentation: default
+
 ---
 
 - Created by Paul N. Leiby
 - Date modified: 2017-07-16
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+hires_dpi = 100 # graph resolution desired at higher level (some docs don't rescale well - set to 100)
+echoWorking = F
+```
 
 Uses the rvest library.
 [rvest: easy web scraping with R (Wickham 2014)](http://blog.rstudio.org/2014/11/24/rvest-easy-web-scraping-with-r/)
 [SelectorGadget vignette (H. Wickham)](https://cran.r-project.org/web/packages/rvest/vignettes/selectorgadget.html)
 [`rvest` Key functions](https://github.com/tidyverse/rvest)
 
-```{r}
+```{r loadlibraries, echo=echoWorking}
 library(tidyverse)
-
 # library(magrittr) # included in tidyversew
 library(rvest)
 ```
