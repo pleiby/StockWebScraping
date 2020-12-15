@@ -1,0 +1,217 @@
+---
+title: "test plotly"
+author: "Paul N. Leiby"
+date: "12/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+See: [Plotly R Open Source Graphing Library](https://plotly.com/r/)
+
+ggplot integration: [Plotly ggplot2 Library]I(https://plotly.com/ggplot2/)
+
+
+### Jitter plot with `geom_jitter`
+
+```{r test_jitter_plot}
+library(plotly)
+district_density <- read.csv("https://raw.githubusercontent.com/plotly/datasets/master/district_density.csv",
+                             stringsAsFactors = FALSE)
+district_density$cluster <- factor(district_density$cluster, levels=c("Pure urban", "Urban-suburban mix", "Dense suburban", "Sparse suburban", "Rural-suburban mix", "Pure rural"))
+district_density$region <- factor(district_density$region, levels=c("West", "South", "Midwest", "Northeast"))
+
+p <- ggplot(district_density,aes(x=cluster, y=dem_margin, colour=region)) +
+  geom_jitter(aes(text=paste("district: ", cd_code)), width=0.25, alpha=0.5, ) +
+  geom_hline(yintercept=0) +
+  theme(axis.text.x = element_text(angle = -30, hjust = 0.1)) +
+  labs(title = "Democratic performance in the 2018 House elections, by region and density",
+       x = "Density Index from CityLab",
+       y = "Democratic Margin of Victory/Defeat")
+fig <- ggplotly(p)
+
+fig
+
+```
+
+### Mapping
+See: [Mapbox Layers in R](https://plotly.com/r/mapbox-layers/)
+
+#### How Layers Work in Mapbox Maps
+If your figure contains one or more traces of type scattermapbox, choroplethmapbox or densitymapbox, the layout of your figure contains configuration information for the map itself.
+
+The map is composed of layers of three different types.
+
+- `layout.mapbox.style` defines the lowest layers, also known as your "base map"
+- the various traces in the `plot_ly` call signature are by default rendered above the base map (this can be controlled via the use of below attribute).
+- the `layout.mapbox.layers` attribute accepts an array that defines layers that are by default rendered above the traces in the `plot_ly` call signature (this can be controlled via the below attribute).
+
+#### Mapbox Access Tokens and When You Need Them
+
+The word "mapbox" in trace names and the layout.mapbox attribute refers to the Mapbox GL JS open-source library. If the basemap you define using `layout.mapbox.style` uses data from the Mapbox service that requires API authentication, then you will need to register for a free account at https://mapbox.com/ and obtain a Mapbox Access token.
+
+If you're using a Chart Studio Enterprise server, please see additional instructions here.
+
+The following values of layout.mapbox.style DO require an Access Token:
+
+1. `basic`, `streets`, `outdoors`, `light`, `dark`, `satellite`, or `satellite-streets` yeild maps composed of vector tiles from the Mapbox service, and do require a Mapbox Access Token or an on-premise Mapbox installation.
+2. A Mapbox service style URL, which requires a Mapbox Access Token or an on-premise Mapbox installation.
+3. A Mapbox Style object as defined at mapbox docs
+We recommend setting your MapBox Access Token as an environment variable in your R environment. That way, your token will not be committed to version control. See Basemap Requiring MapBox Access Token
+
+#### The following values of `layout.mapbox.style` DO NOT require an Access Token:
+1. `white-bg` yields an empty white canvas which results in no external HTTP requests
+2. `open-street-map`, `carto-positron`, `carto-darkmatter`, `stamen-terrain`, `stamen-toner` or `stamen-watercolor` yeild maps composed of raster tiles from various public tile servers which do not require signups or access tokens
+
+#### OpenStreetMap Tiles, no Token Needed
+This chart demonstrates how to use "open-street-map" tiles as the base map for a chart. A Mapbox Access Token is not required.
+
+
+```{r}
+library(plotly)
+
+us_cities = read.csv("https://raw.githubusercontent.com/plotly/datasets/master/us-cities-top-1k.csv")
+
+fig_data <- us_cities 
+head(fig_data)
+
+fig <- fig_data %>% # a plotly figure object
+  plot_ly(
+    lat = ~lat,
+    lon = ~lon,
+    marker = list(color = "fuchsia"),
+    type = 'scattermapbox',
+    hovertext = us_cities[,"City"]) 
+
+fig <- fig %>%
+  layout(
+    mapbox = list(
+      style = 'open-street-map',
+      zoom =2.5,
+      center = list(lon = -88, lat = 34))) 
+
+fig
+```
+
+#### Base Map Below A Trace: No Token Needed
+
+This chart demonstrates how to use a public USGS imagery map as a base map using layout.mapbox.layers. The map is rendered below the trace.
+
+
+```{r}
+library(plotly)
+
+us_cities = read.csv("https://raw.githubusercontent.com/plotly/datasets/master/us-cities-top-1k.csv")
+
+fig <- us_cities 
+fig <- fig %>%
+  plot_ly(
+    lat = ~lat,
+    lon = ~lon,
+    type = "scattermapbox",
+    hovertext = us_cities[,"City"],
+    marker = list(color = "fuchsia")) 
+
+fig <- fig %>%
+  layout(mapbox= list(
+    style = "white-bg",
+    # zoom = 3,
+    # center = list(lon = -93 ,lat= 41),
+    zoom = 6,
+    center = list(lon = -77.05 ,lat= 38.8),
+    layers = list(list(
+      below = 'traces',
+      sourcetype = "raster",
+      source = list("https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}")))))
+
+fig
+
+```
+
+#### Maps Below and Above A Trace: No Token Needed
+
+This example uses the same base map below the trace as the one above.
+
+In addition, a WMS layer map from Environment Canada (which displays near-real-time radar imagery in partly-transparent raster tiles) is rendered above the scattermapbox trace, as is the default:
+
+
+
+```{r}
+library(plotly)
+fig <- us_cities 
+fig <- fig %>%
+  plot_ly(
+    lat = ~lat,
+    lon = ~lon,
+    type = "scattermapbox",
+    hovertext = us_cities[,"City"],
+    marker = list(color = "fuchsia")) 
+fig <- fig %>%
+  layout(
+    mapbox= list(
+      style = "white-bg",
+      sourcetype = 'raster',
+      # zoom = 3,
+      # center = list(lon = -93 ,lat= 41),
+      zoom = 6,
+      center = list(lon = -77.05 ,lat= 38.8),
+      layers = list(list(
+        below = 'traces',
+        sourcetype = "raster",
+        source = list("https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}")),
+        list(
+          sourcetype = "raster",
+          source = list("https://geo.weather.gc.ca/geomet/?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&BBOX={bbox-epsg-3857}&CRS=EPSG:3857&WIDTH=1000&HEIGHT=1000&LAYERS=RADAR_1KM_RDBR&TILED=true&FORMAT=image/png")))))
+
+fig
+
+```
+
+#### Map Requiring MapBox Access Token
+This example demonstrates how to use a MapBox Access token in order to use
+alternative "styles", or base maps from MapBox:
+"dark", "basic", and "satellite-streets",
+each of which requires API authentication.
+
+In this case, the Access Token is stored in an environment variable which is then passed to the chart configuration call signature.
+
+
+```{r}
+library(plotly)
+library(here)
+
+mapboxToken <- paste(readLines(here("tests","mapbox_token.txt")), collapse="")    # You need your own token
+Sys.setenv("MAPBOX_TOKEN" = mapboxToken) # for Orca
+```
+
+```{r}
+us_cities = read.csv("https://raw.githubusercontent.com/plotly/datasets/master/us-cities-top-1k.csv")
+
+fig <- us_cities 
+fig <- fig %>%
+  plot_ly(
+    lat = ~lat,
+    lon = ~lon,
+    marker = list(color = "fuchsia"),
+    type = 'scattermapbox',
+    hovertext = us_cities[,"City"]) 
+fig <- fig %>%
+  layout(
+    mapbox = list(
+      # style = 'dark',
+      # style = 'basic',
+      style = 'satellite-streets',
+      zoom =2.5,
+      center = list(lon = -88, lat = 34))) 
+fig <- fig %>%
+  config(mapboxAccessToken = Sys.getenv("MAPBOX_TOKEN"))
+
+fig
+
+```
+
+### Reference
+
+See https://plotly.com/r/reference/#scattermapbox for more information and options!
