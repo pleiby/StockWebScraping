@@ -1,0 +1,542 @@
+---
+title: "test purrr"
+author: "Paul N. Leiby"
+date: "12/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## `purrr` functions for mapping
+
+source: [The power of three: purrr-poseful iteration in R with map, pmap and imap](http://zevross.com/blog/2019/06/11/the-power-of-three-purrr-poseful-iteration-in-r-with-map-pmap-and-imap/)
+
+```{r cars}
+library(purrr)        # Functional programming
+library(dplyr)        # Data wrangling
+library(tidyr)        # Tidy-ing data
+library(stringr)      # String operations
+library(repurrrsive)  # Game of Thrones data
+library(tidygraph)    # Convert data into node/edge format
+library(ggraph)       # Network graphing
+```
+
+#### Load GOT data “Game of Thrones” dataset from the repurrrsive package.
+
+```{r}
+dat_list <- got_chars
+class(dat_list)
+```
+
+The dataset is a list of 30 lists containing various information on Game of Thrones characters. The first list looks like this:
+
+
+```{r}
+glimpse(dat_list[[1]])
+## List of 18
+```
+### The map function
+
+The `map` function iteratively applies a function or formula to each element of a list or vector. The operation is similar to a `for` loop but with fewer keystrokes and cleaner code. The result of applying `map` will be the same length as the input. Since purrr functions are type-stable there is little guesswork in knowing which type of output will be returned. For example `map_chr()` returns character vectors, `map_dbl()` returns double vectors, etc.
+
+#### Example 1: Extract a single element from a list
+Extracting an element from a list can be done a number of ways. 
+The following code chunks will produce the same results, 
+extracting a single named element from a list.
+
+```{r}
+# Method 1: using the name of the list element, similar to dat_list[[1]]["name"], dat_list[[2]]["name"], etc
+map(dat_list, "name")
+
+# Method 2: using the `pluck` function
+map(dat_list, pluck("name"))
+
+# Method 3: using the index of the list element
+map(dat_list, 3)
+```
+Note that the object return by `map` is a list (of the selected items from each element of list `dat_list`)
+```{r}
+class(map(dat_list, "name"))
+```
+
+If `map` is applied to a dataframe, it will apply the function to each column
+(since a dataframe is a list of columns.)
+
+For example, this selects the second item of each column
+```{r}
+x_df <- tibble(a = c(1,2,3), b = c("x", "y", "z"))
+x_df
+map(x_df, 2)
+```
+
+
+Selection of indexed item with the `[` function
+(which returns a `list` object for each call, i.e. from each element of the list `dat_list`)
+
+So this returns a list of lists, each with is single-element character vector
+
+```{r}
+map(dat_list, `[`, "name")
+
+```
+
+Or, when applied to columns of a dataframe
+```{r}
+map(x_df, `[`, c(2, 3))
+```
+
+#### Example 2a: Create a dataframe from a list (easier)
+
+Create a dataframe from several of the list items. This method will only work if the element you’re requesting (in this case name, gender and culture) has a length of 1.
+
+
+The `[` is the function being mapped over `dat_list` here -- 
+essentially telling it to apply [] to each list in `dat_list`
+and the strings "name", "gender" and "culture" are the argument passed to []
+
+What this is doing is the equivalent to `dat_list[[1]][c("name", "gender", "culture")], dat_list[[2]][c("name", "gender", "culture")]` and so on. The `_dfr` piece tells map to convert the result to a data.frame by row.
+
+(Without `_dfr` the `map` fn returns a list of lists, each containing three named items.
+`_dfr` flattens it all into a data frame, with one row for each of the subordinate/nested lists.
+The list-item selector elements (char strings) each become a column heading in the dataframe.)
+
+```{r}
+# The `[` is the function here -- essentially telling it to apply [] to each list
+# and the name, gender and culter are the argument passed to []
+
+map_dfr(dat_list,`[`, c("name", "gender", "culture"))
+## # A tibble: 30 x 3
+##   name              gender culture 
+##   <chr>             <chr>  <chr>   
+## 1 Theon Greyjoy     Male   Ironborn
+## 2 Tyrion Lannister  Male   ""      
+## 3 Victarion Greyjoy Male   Ironborn
+## 4 Will              Male   ""      
+## 5 Areo Hotah        Male   Norvoshi
+## 6 Chett             Male   ""      
+## # ... with 24 more rows
+
+```
+
+#### Example 2b: Create a dataframe from a list (harder)
+
+If you try running the code above but add selectors/indices for list items "aliases" and "allegiances"
+you should get the following error: Error: Argument 4 must be length 1, not 4.
+
+```{r include=F}
+x <- map_dfr(dat_list,`[`, c("name", "gender", "culture", "aliases", "allegiances"))
+## Error: Argument 4 must be length 1, not 4
+```
+
+Take a closer look at the list elements "aliases" and "allegiances". You’ll notice that some inputs are character vectors of length > 1.
+
+```{r}
+glimpse(map(dat_list, "aliases"))
+## List of 6
+##  $ : chr [1:4] "Prince of Fools" "Theon Turncloak" "Reek" "Theon Kinslayer"
+##  $ : chr [1:11] "The Imp" "Halfman" "The boyman" "Giant of Lannister" ...
+##  $ : chr "The Iron Captain"
+##  $ : chr ""
+##  $ : chr ""
+##  $ : chr ""
+```
+
+In order to include these items in our dataframe we’ll need to create a list-column using map.
+
+```{r}
+dat_df <- dat_list %>% { # braces allow the piped result to be used for 2ndary purposes (not as the first argument, and possibly multiple times)
+  tibble( # tibble of multiple columns, some char vecs, others for multi-element fields are list columns 
+    name = map_chr(., "name"),
+    gender = map_chr(., "gender"),
+    culture = map_chr(., "culture"),
+    aliases = map(., "aliases"),
+    allegiances = map(., "allegiances")
+  )}
+
+dat_df
+## # A tibble: 30 x 5
+##   name              gender culture  aliases    allegiances
+##   <chr>             <chr>  <chr>    <list>     <list>     
+## 1 Theon Greyjoy     Male   Ironborn <chr [4]>  <chr [1]>  
+## 2 Tyrion Lannister  Male   ""       <chr [11]> <chr [1]>  
+## 3 Victarion Greyjoy Male   Ironborn <chr [1]>  <chr [1]>  
+## 4 Will              Male   ""       <chr [1]>  <NULL>     
+## 5 Areo Hotah        Male   Norvoshi <chr [1]>  <chr [1]>  
+## # ... with 25 more rows
+
+# str(dat_df)
+```
+
+```{r include=FALSE}
+# NOTE: this mutate does not work because dat_list is not a dataframe, but a list
+dat_df <- dat_list %>%
+  mutate(
+    name = map_chr(., "name"),
+    gender = map_chr(., "gender"),
+    culture = map_chr(., "culture"),
+    aliases = map(., "aliases"),
+    allegiances = map(., "allegiances")
+  )
+```
+
+### Example 3: Apply a custom function to a list
+
+`map` and `map_xxx` can apply any function to the items in a list.
+
+Write a function that outputs a statement indicating whether a character is alive or dead. 
+Note that `map_chr` will output a character vector instead of a list.
+
+```{r}
+dead_or_alive <- function(x){
+  ifelse(x[["alive"]], paste(x[["name"]], "is alive!"),
+    paste(x[["name"]], "is dead :("))
+}
+map_chr(dat_list, dead_or_alive)
+## [1] "Theon Greyjoy is alive!"     "Tyrion Lannister is alive!" 
+## [3] "Victarion Greyjoy is alive!" "Will is dead :("            
+## [5] "Areo Hotah is alive!"        "Chett is dead :("
+```
+
+#### Example 4: Bonus, apply a custom function and create a network graph
+
+Create a plot of all of Jon Snow’s aliases. First we’ll use `compact` to remove elements from `dat_list` that have length zero or are NULL. For example if you look at Cersei’s aliases you’ll see an empty list. 
+
+Using `compact` will remove this empty list (removes all empty elements).
+Note: `purrr` related functions are `keep` and `discard`, which keep or discard list elements respectivly, based on the results of a (boolean) predicate function `.p`:
+
+`keep(.x, .p, ...)`
+
+`discard(.x, .p, ...)`
+
+
+```{r}
+# Empty list for Cersei Lannister's `aliases`
+dat_list[[19]]$aliases
+```
+
+```{r}
+## list()
+cdat_list <- map(dat_list, compact)
+```
+
+Write a function that pulls the name and aliases elements if aliases exists. Create a tibble and using the function `tidygraph::as_tbl_graph` convert the data into proper node and edge data that can be used for the plot.
+
+```{r}
+also_known_as_graph <- function(x){
+  
+  if ("aliases" %in% names(x)){
+    g <- tibble(
+      from = x$name,
+      to = x$aliases)
+      
+    g <- as_tbl_graph(g)
+  }
+}
+
+g <- map(cdat_list, also_known_as_graph)
+```
+
+
+The `tbl_graph` format should look something like this:
+
+```{r}
+g[[1]]
+## # A tbl_graph: 5 nodes and 4 edges
+## #
+## # A rooted tree
+## #
+## # Node Data: 5 x 1 (active)
+##   name           
+##   <chr>          
+## 1 Theon Greyjoy  
+## 2 Prince of Fools
+## 3 Theon Turncloak
+## 4 Reek           
+## 5 Theon Kinslayer
+## #
+## # Edge Data: 4 x 2
+##    from    to
+##   <int> <int>
+## 1     1     2
+## 2     1     3
+## 3     1     4
+## # ... with 1 more row
+```
+
+Finally plot the data using ggraph. Jon Snow’s index within our g object is 23 – so we’ll use g[[23]] for his data. Below are all of Jon Snow’s aliases!
+
+```{r}
+ggraph(g[[23]], layout = "graphopt") + 
+  geom_edge_link() + 
+  geom_node_label(aes(label = name), 
+    label.padding = unit(1, "lines"), 
+    label.size = 0) +
+  theme_graph()
+```
+
+
+### The `pmap` function
+
+The pmap function can be used on an arbitrary number of inputs and is great for doing row-wise iterations on a dataframe.
+
+Note: this seems quite distinct from `map`, which applies a single-arg function across the items of a list, hence would apply the same function across some-or-all columns of a dataframe.
+
+#### Example 1: Apply a function to each row
+Using the pmap function we can apply a row-wise operation to our (dataframe-format) dataset. As a reminder here’s what our dat_m object looks like:
+
+```{r}
+dat_df
+
+## # A tibble: 30 x 5
+##   name              gender culture  aliases    allegiances
+##   <chr>             <chr>  <chr>    <list>     <list>     
+## 1 Theon Greyjoy     Male   Ironborn <chr [4]>  <chr [1]>  
+## 2 Tyrion Lannister  Male   ""       <chr [11]> <chr [1]>  
+## 3 Victarion Greyjoy Male   Ironborn <chr [1]>  <chr [1]>  
+## 4 Will              Male   ""       <chr [1]>  <NULL>     
+## 5 Areo Hotah        Male   Norvoshi <chr [1]>  <chr [1]>  
+## # ... with 25 more rows
+```
+
+If we use `pmap` and apply the paste function but do not specify column names, the result will be to apply the function to all columns.
+In this case all columns will be pasted together by row. 
+
+Note that the aliases list-column for Theon and Tyrion includes 4 and 11 entries respectively – and each alias is pasted with gender, culture and allegiance so you end up with 4 and 11 strings
+
+```{r}
+pmap(dat_df, paste)
+
+## [[1]]
+## [1] "Theon Greyjoy Male Ironborn Prince of Fools House Greyjoy of Pyke"
+## [2] "Theon Greyjoy Male Ironborn Theon Turncloak House Greyjoy of Pyke"
+## [3] "Theon Greyjoy Male Ironborn Reek House Greyjoy of Pyke"           
+## [4] "Theon Greyjoy Male Ironborn Theon Kinslayer House Greyjoy of Pyke"
+## 
+## [[2]]
+##  [1] "Tyrion Lannister Male  The Imp House Lannister of Casterly Rock"           
+##  [2] "Tyrion Lannister Male  Halfman House Lannister of Casterly Rock"           
+##  [3] "Tyrion Lannister Male  The boyman House Lannister of Casterly Rock"        
+##  [4] "Tyrion Lannister Male  Giant of Lannister House Lannister of Casterly Rock"
+##  [5] "Tyrion Lannister Male  Lord Tywin's Doom House Lannister of Casterly Rock" 
+##  [6] "Tyrion Lannister Male  Lord Tywin's Bane House Lannister of Casterly Rock" 
+##  [7] "Tyrion Lannister Male  Yollo House Lannister of Casterly Rock"             
+##  [8] "Tyrion Lannister Male  Hugor Hill House Lannister of Casterly Rock"        
+##  [9] "Tyrion Lannister Male  No-Nose House Lannister of Casterly Rock"           
+## [10] "Tyrion Lannister Male  Freak House Lannister of Casterly Rock"             
+## [11] "Tyrion Lannister Male  Dwarf House Lannister of Casterly Rock"
+```
+
+
+#### Example 2: Apply a function to each row using column names to select function args
+
+Apply another function to the table but this time specify the column names,
+each associatd with an arg to be passed to the function.
+
+Initial prep before using `pmap`
+
+To make this more interesting let's filter to any character with a Stark or Lannister allegiance. We can do this by extracting “Lannister” or “Stark” from the list of allegiances. Here’s an example of what the allegiances column looks like:
+
+```{r}
+dat_df$allegiances[16:18]
+## [[1]]
+## [1] "House Stark of Winterfell"
+## 
+## [[2]]
+## [1] "House Baratheon of Storm's End" "House Stark of Winterfell"     
+## [3] "House Tarth of Evenfall Hall"  
+## 
+## [[3]]
+## [1] "House Stark of Winterfell" "House Tully of Riverrun"
+
+```
+
+We will use `str_extract()` from the stringr package to pull out the words “Lannister” or “Stark. Note that the `~` and `.x` are shorthand for function(x) and x as an example. You can see that it returns a vector with NA values if neither ”Lannister" nor “Stark” exist.
+
+Note that here we `map` a function across the elements (rows) of a list _column_ in a dataframe.
+
+```{r}
+dat_p <- mutate(dat_df,
+  stark_or_lannister = map(allegiances, ~str_extract(.x, "Lannister|Stark")),
+  stark_or_lannister_bool = map(allegiances, ~str_detect(.x, "Lannister|Stark"))
+  )
+  # stark_or_lannister = map(allegiances, ~str_detect(.x, "Lannister|Stark")))
+
+dat_p$stark_or_lannister[10:18]
+## [[1]]
+## [1] "Stark"
+## 
+## [[2]]
+## [1] NA      "Stark" NA     
+## 
+## [[3]]
+## [1] "Stark" NA
+dat_p$stark_or_lannister_bool[10:18]
+```
+
+We can drop the `NA` values, or logical `FALSE` values, with the handy `discard()` function.
+
+```{r}
+dat_p <- dat_p %>%
+  mutate(
+    stark_or_lannister = map(stark_or_lannister, ~discard(.x, is.na)),
+    # stark_or_lannister_bool = map(stark_or_lannister_bool, ~discard(.x, .x!=TRUE))
+    )
+
+dat_p$stark_or_lannister[10:18]
+## [[1]]
+## [1] "Stark"
+## 
+## [[2]]
+## [1] "Stark"
+## 
+## [[3]]
+## [1] "Stark"
+
+dat_p$stark_or_lannister_bool[10:18]
+
+```
+
+
+Finally, we can filter to those that have a Lannister or Stark allegiance and then use unnest() to essentially convert the stark_or_lannister column to a traditional character column. Careful though, if there happened to be a character with both a Lannister and Stark allegiance and thus the stark_or_lannister column had two entries unnest() would create two rows for that character.
+
+```{r}
+dat_p <- filter(dat_p, stark_or_lannister %in% c("Lannister", "Stark")) %>%
+  unnest(stark_or_lannister) 
+
+dat_p
+## # A tibble: 11 x 6
+##   name            gender culture   aliases    allegiances stark_or_lannist~
+##   <chr>           <chr>  <chr>     <list>     <list>      <chr>            
+## 1 Tyrion Lannist~ Male   ""        <chr [11]> <chr [1]>   Lannister        
+## 2 Arya Stark      Female Northmen  <chr [16]> <chr [1]>   Stark            
+## 3 Brandon Stark   Male   Northmen  <chr [3]>  <chr [1]>   Stark            
+## 4 Brienne of Tar~ Female ""        <chr [3]>  <chr [3]>   Stark            
+## 5 Catelyn Stark   Female Rivermen  <chr [5]>  <chr [2]>   Stark            
+## 6 Cersei Lannist~ Female Westerman <NULL>     <chr [1]>   Lannister
+## 7 Eddard Stark    Male   Northmen  <chr [3]>  <chr [1]>   Stark            
+## 8 Jamie Lannist~  Male   Westerla~ <chr [4]>  <chr [1]>   Stark            
+## 9 Jon Snow        Male   Northmen  <chr [8]>  <chr [1]>   Stark            
+## 10 Kevin Lannist~ Male   ""        <chr [1]>  <chr [1]>   Stark            
+## 11 Sansa Stark    Female Northmen  <chr [3]>  <chr [2]>   Stark            
+
+```
+
+#### Use pmap
+
+Write a function called `whom_can_you_trust` that outputs a string using 3 columns from the table. 
+
+Note that we are using the ... (ellipsis) which allows us to apply the function to our table which contains more columns than the number of function arguments (in this case, more than the three columns).
+If we were to remove the ellipsis we would get an "unused arguments" error message.
+
+```{r}
+whom_can_you_trust <- function(name, allegiances, stark_or_lannister, ...) {
+  y <- glue::glue("{name} has an allegiance to the {stark_or_lannister} family")
+    ifelse(length(allegiances) > 1, 
+    glue::glue("{y} but also has {length(allegiances)-1} other allegiance(s)."), 
+    glue::glue("{y} and no other allegiances."))
+}
+
+dat_p %>% pmap_chr(whom_can_you_trust)
+##  [1] "Tyrion Lannister has an allegiance to the Lannister family and no other allegiances."      
+##  [2] "Arya Stark has an allegiance to the Stark family and no other allegiances."                
+##  [3] "Brandon Stark has an allegiance to the Stark family and no other allegiances."             
+##  [4] "Brienne of Tarth has an allegiance to the Stark family but also has 2 other allegiance(s)."
+##  [5] "Catelyn Stark has an allegiance to the Stark family but also has 1 other allegiance(s)."   
+##  [6] "Cersei Lannister has an allegiance to the Lannister family and no other allegiances."      
+##  [7] "Eddard Stark has an allegiance to the Stark family and no other allegiances."              
+##  [8] "Jaime Lannister has an allegiance to the Lannister family and no other allegiances."       
+##  [9] "Jon Snow has an allegiance to the Stark family and no other allegiances."                  
+## [10] "Kevan Lannister has an allegiance to the Lannister family and no other allegiances."       
+## [11] "Sansa Stark has an allegiance to the Stark family but also has 1 other allegiance(s)."
+```
+
+### The `imap` function
+
+The `imap` function can generally be thought of as indexed map. The function uses 2 arguments: the first is the value, the second is the position or the name.
+
+For objects that do not have names it is shorthand for `map2(x, seq_along(x), ...)`
+For objects that have names it is shorthand for `map2(x, names(x), ...)`
+
+#### Example 1: Apply imap to character vector
+Create a character vector of 10 names. Using imap ouput the name (.x) and the index of name (.y).
+
+```{r}
+v <- sample(dat_df$name, 10)
+
+class(v) # character vector
+
+imap_chr(v, ~ paste0(.y, ": ", .x))
+##  [1] "1: Jon Snow"           "2: Asha Greyjoy"      
+##  [3] "3: Daenerys Targaryen" "4: Eddard Stark"      
+##  [5] "5: Brienne of Tarth"   "6: Melisandre"        
+##  [7] "7: Kevan Lannister"    "8: Davos Seaworth"    
+##  [9] "9: Victarion Greyjoy"  "10: Sansa Stark"
+```
+
+
+#### Example 2: Apply imap to list with names
+
+For this example we create a new list called `dat_i`. The new list has named elements but no longer contains the name field for demonstration purposes.
+
+```{r}
+dat_i <- dat_df %>% split(f=.$name) %>% # split dataframe into a list of dataframes based on "factor" f
+  map(., ~select(.x, -name))
+
+dat_i
+## $`Aeron Greyjoy`
+## # A tibble: 1 x 4
+##   gender culture  aliases   allegiances
+##   <chr>  <chr>    <list>    <list>     
+## 1 Male   Ironborn <chr [2]> <chr [1]>  
+## 
+## $`Areo Hotah`
+## # A tibble: 1 x 4
+##   gender culture  aliases   allegiances
+##   <chr>  <chr>    <list>    <list>     A tibble: 6 x 6  
+## 1 Male   Norvoshi <chr [1]> <chr [1]>  
+## 
+## $`Arianne Martell`
+## # A tibble: 1 x 4
+##   gender culture aliases   allegiances
+##   <chr>  <chr>   <list>    <list>     
+## 1 Female Dornish <chr [1]> <chr [1]>
+```
+
+Using imap and mutate we can apply the name of the list element (.y) as a new column in our table (.x).
+
+```{r}
+dat_i <- imap(dat_i, ~mutate(.x, name = .y))
+## $`Aeron Greyjoy`
+## # A tibble: 1 x 5
+##   gender culture  aliases   allegiances name         
+##   <chr>  <chr>    <list>    <list>      <chr>        
+## 1 Male   Ironborn <chr [2]> <chr [1]>   Aeron Greyjoy
+## 
+## $`Areo Hotah`
+## # A tibble: 1 x 5
+##   gender culture  aliases   allegiances name      
+##   <chr>  <chr>    <list>    <list>      <chr>     
+## 1 Male   Norvoshi <chr [1]> <chr [1]>   Areo Hotah
+## 
+## $`Arianne Martell`
+## # A tibble: 1 x 5
+##   gender culture aliases   allegiances name           
+##   <chr>  <chr>   <list>    <list>      <chr>          
+## 1 Female Dornish <chr [1]> <chr [1]>   Arianne Martell
+
+```
+
+
+### Summary
+
+The `purrr` family of functions are an excellent choice for streamlining your code and removing programming redundancies. 
+
+Three useful `purrr` functions: `map`, `pmap` and `imap`,
+plus some bonus functions like `discard` and `compact`. 
+
+For a complete list of purrr functions check out the [`purrr` cheat sheet](https://www.rstudio.com/resources/cheatsheets/#purrr). 
+
+
+
