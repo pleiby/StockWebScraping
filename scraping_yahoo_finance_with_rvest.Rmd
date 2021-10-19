@@ -1,0 +1,441 @@
+---
+title: "scraping Yahoo finance with rvest"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Yahoo Finance Web Scraping with R
+
+[Yahoo Finance Web Scraping with R](https://levelup.gitconnected.com/yahoo-finance-web-scraping-with-r-5584d226c3a6)
+Mallika Gokarn, Feb 21, 2021
+
+
+```{r}
+library(data.table)
+library(tidyr)
+library(tidyverse)
+library(XML) # For parsing XML or HTML file or string
+library(xml2) # for Reading HTML or XML
+library(rvest) # For extracting pieces of HTML document including CSS Selectors
+library(httr) # For handling http requests — GET(), PUT(), POST(), PATCH(), HEAD(), and DELETE()
+library(qdapRegex) # Collection of RegEx tools associated with 'qdap' package.
+```
+
+
+interested in the following metrics reported on a quarterly basis:
+
+    Total Revenue
+    Earnings
+    Cost of Revenue
+    Gross Profit
+
+```{r}
+symbol <- "CAJ"
+url <- paste0('https://finance.yahoo.com/quote/', symbol, '/financials?p=', symbol)
+html_M <- read_html(url) %>% 
+  html_node('body') %>% 
+  html_text() %>% 
+  toString()
+```
+
+Reporting currency is passed through the root.app.main component in the following manner: `,\”financialCurrency\”:\”JPY\”},` . 
+
+Extract and strip the string for the currency code, e.g. of “JPY”. 
+
+Later, can use the currency conversion rate and convert the revenue numbers to USD.
+
+Note: The methods used here rely heavily on string matching and revision with regular
+expressions.
+
+
+```{r}
+fin_cur <- sub(".*\"financialCurrency\":*(.*?) *[\n|\r\n|\r]{2}", "\\1", html_M)
+fin_cur <- head(stringr::str_match_all(fin_cur, "(.*?)\\}")[[1]][, 2],1)
+fin_cur=gsub("\"", "", fin_cur, fixed=T)
+```
+
+#### Total Revenue and Earnings on a quarterly basis
+
+We want to be able to extract the quarterly total revenue and earnings data and save it in a usable format. To do so we’ll need to extract the quarterly data, parse it into a readable format and then iteratively capture the date alongside the raw numbers. 
+
+
+```{r}
+Q_results <- sub(".*\"quarterly\":*(.*?) *[\n|\r\n|\r]{2}", "\\1", html_M) # ? focus on quarterly results
+Q_results <- head(stringr::str_match_all(Q_results, "\\[(.*?)\\]")[[1]][, 2],1)
+
+```
+
+
+```{r}
+splitQ <- str_split(Q_results, "\\{\"date\":") # split earnings string into separate line for each date
+splitQ <- splitQ[[1]] # first element of list is the text for earnings table (with results in multiple formats)
+```
+
+
+```{r}
+splitQ <- paste("\\{\"date\":", splitQ, sep="") # prefix all the dates with a label
+
+if (length(splitQ)>0) { # catch errors from when a stock is not listed or financial reporting has not been completed
+  tot_rev_df <- data.frame(
+    curr = fin_cur, # dataframe of dates and (raw-formatted) revenues
+    key=str_extract(splitQ, "\"date\":\"*(.*?) *\""),
+    value=str_extract(splitQ, "\"revenue\":\\{\"raw\":*(.*?) *,"))
+  tot_rev_df <- tot_rev_df[complete.cases(tot_rev_df), ] # drop rows with missing obs
+  tot_rev_df2 <- data.frame(lapply(tot_rev_df, as.character), stringsAsFactors=FALSE) # make sure strings are char not factors
+  tot_rev_df <- tot_rev_df %>%
+    separate(key, c("first", "key"), sep=":") %>% # split field on ":" and drop date label
+    select(-first)
+  tot_rev_df <- tot_rev_df %>%
+    separate(value, c("first", "second", "value"), sep=":") %>%
+    select(-first, -second)
+  tot_rev_df <- tot_rev_df %>% # remove extra quotes and commas (all fiels still char)
+    mutate(key=gsub("\"", "", key, fixed=T),
+       value=gsub(",", "", value, fixed=T))
+}
+
+```
+
+
+#### Cost of Revenue and Gross Profit
+
+The raw data belonging to the Cost of Revenue and Gross Profit metrics can be extracted with the below code. The first half of the character vector extracted from the ex_between function contains quarterly data and the second half contains annual data.
+
+
+```{r}
+cost_rev<- qdapRegex::ex_between(html_M, "\"costOfRevenue\":", "\"fmt\"")[[1]]
+cost_rev <- cost_rev[1:(length(cost_rev)/2)] # drop latter half of obs
+cost_rev <- gsub("{\"raw\":", "", cost_rev, fixed=T)
+cost_rev <- gsub(",", "", cost_rev, fixed=T)gp <- qdapRegex::ex_between(html_M, "\"grossProfit\":", "\"fmt\"")[[1]]
+gp <- gp[1:(length(gp)/2)]
+gp <- gsub("{\"raw\":", "", gp, fixed=T)
+gp <- gsub(",", "", gp, fixed=T)
+
+```
+
+## Advanced Web Scraping with R
+
+[Advanced Web Scraping with R](https://www.pluralsight.com/guides/advanced-web-scraping-with-r)
+
+C. Wagmi, Sep 15, 2020
+
+#### Fetching Data from a Single Table or Multiple Tables on an HTML Webpage
+
+
+```{r}
+# --
+# Importing the rvest library 
+# It internally imports xml2 library too 
+# --
+
+library(rvest)
+library(stringr) # For data cleaning
+
+```
+
+
+```{r}
+# --
+# Load the link of Holders tab in a variable, here link
+# --
+ticker <- "UPST" # Upstart
+link <- paste0("https://finance.yahoo.com/quote/", ticker, "/holders?p=", ticker)
+link
+
+## [1] "https://finance.yahoo.com/quote/UPST/holders?p=UPST"
+```
+
+
+```{r}
+# --
+# Read the HTML webpage using the xml2 package function read_html()
+# --
+driver <- read_html(link)
+```
+
+`rvest` can select out all tables easily, into a list (each in html form)
+ 
+```{r}
+# --
+# Since we know there is a tabular data on the webpage, we pass "table" as the CSS selector
+# The variable "allTables" should hold all three tables in it:
+#   Major Holders
+#   Top Institutional Holders
+#   Top Mutual Fund Holders
+# --
+
+allTables <- html_nodes(driver, css = "table")
+
+# --
+# Fetch any of the three tables based on their index
+```
+
+
+```{r}
+# 1. Major Holders
+
+# --
+
+# first (and only) table expected in list is majorHolders
+majorHolders <- html_table(allTables)[[1]] # Parse an html table into a data frame
+
+majorHolders
+
+
+#       X1                                    X2
+
+# 1   5.47%       % of Shares Held by All Insider
+# 2 110.24%      % of Shares Held by Institutions
+# 3 116.62%       % of Float Held by Institutions
+# 4     275 Number of Institutions Holding Shares
+```
+
+
+```{r}
+# --
+# 2. Top Institutional Holders
+# --
+
+topInstHolders <- html_table(allTables)[[2]]
+
+topInstHolders
+
+
+#                             Holder     Shares Date Reported  % Out       Value
+# 1      Insight Holdings Group, Llc 18,962,692  Dec 30, 2019 17.99% 326,347,929
+# 2                         FMR, LLC 10,093,850  Dec 30, 2019  9.58% 173,715,158
+# 3       Vanguard Group, Inc. (The)  7,468,146  Dec 30, 2019  7.09% 128,526,792
+# 4  Mackenzie Financial Corporation  4,837,441  Dec 30, 2019  4.59%  83,252,359
+# 5               Crewe Advisors LLC  4,761,680  Dec 30, 2019  4.52%  81,948,512
+# 6        Ensign Peak Advisors, Inc  4,461,122  Dec 30, 2019  4.23%  76,775,909\
+# 7         Riverbridge Partners LLC  4,021,869  Mar 30, 2020  3.82%  44,160,121
+# 8          First Trust Advisors LP  3,970,327  Dec 30, 2019  3.77%  68,329,327
+# 9       Fred Alger Management, LLC  3,875,827  Dec 30, 2019  3.68%  66,702,982
+# 10 ArrowMark Colorado Holdings LLC  3,864,321  Dec 30, 2019  3.67%  66,504,964
+```
+
+
+```{r}
+# --
+# 3. Top Mutual Fund Holders
+# --
+
+topMutualFundHolders <- html_table(allTables)[[3]]
+
+topMutualFundHolders
+
+
+#                                                           Holder    Shares Date Reported % Out      Value
+# 1                 First Trust Dow Jones Internet Index (SM) Fund 3,964,962  Dec 30, 2019 3.76% 68,236,996
+# 2                                     Alger Small Cap Focus Fund 3,527,274  Oct 30, 2019 3.35% 63,773,113
+# 3  Fidelity Select Portfolios - Software & IT Services Portfolio 3,297,900  Jan 30, 2020 3.13% 63,946,281
+# 4                         Vanguard Total Stock Market Index Fund 2,264,398  Dec 30, 2019 2.15% 38,970,289
+# 5                                  Vanguard Small-Cap Index Fund 2,094,866  Dec 30, 2019 1.99% 36,052,643
+# 6                                      Ivy Small Cap Growth Fund 1,302,887  Sep 29, 2019 1.24% 21,881,987
+# 7                            Vanguard Small Cap Value Index Fund 1,278,504  Dec 30, 2019 1.21% 22,003,053
+# 8                            Vanguard Extended Market Index Fund 1,186,015  Dec 30, 2019 1.13% 20,411,318
+# 9       Franklin Strategic Series-Franklin Small Cap Growth Fund 1,134,200  Oct 30, 2019 1.08% 20,506,336
+# 10                          Fidelity Stock Selector All Cap Fund 1,018,833  Jan 30, 2020 0.97% 19,755,171
+
+```
+
+#### Repeat for Yahoo Finance Analysis Page
+
+```{r}
+link <- paste0("https://finance.yahoo.com/quote/", ticker, "/analysis?p=", ticker)
+driver <- read_html(link) # Read the HTML webpage using the xml2 package function read_html()
+analysisTables <- html_nodes(driver, css = "table") # select out all tables into a list (each in html form)
+
+```
+
+
+```{r}
+html_table(analysisTables)[[1]]
+```
+
+```{r}
+html_table(analysisTables)[[3]]
+```
+
+```{r}
+analysisTibbles <- lapply(analysisTables, html_table) # convert to list of tibbles
+
+```
+
+```{r}
+names(analysisTibbles[[1]])[[1]]
+names(analysisTibbles[[2]])[[1]]
+names(analysisTibbles[[3]])[[1]]
+names(analysisTibbles[[4]])[[1]]
+names(analysisTibbles[[5]])[[1]]
+names(analysisTibbles[[6]])[[1]]
+```
+
+Get EPS Growth Estimates for Ticker of Interest
+
+```{r}
+analysisTibbles[[6]][1:2]
+```
+
+```{r}
+
+html_elements(driver, css = "table")
+```
+
+#### Fetching Different Nodes from a Webpage Using CSS Selector
+
+You can learn about fetching data using CSS selector from my [blog](https://github.com/chhayawagmi/blogs/blob/master/R-CSS-Selector.md) 
+available at GitHub.
+
+#### Automatic Navigation to Multiple Pages and Fetching Entities 
+
+The objective here is to provide only one URL to the R program, here https://www.pluralsight.com/browse, and let the program automatically navigate to each of those 10 skill webpages and extract all course details as shown:
+
+```{r}
+link <- "https://www.pluralsight.com/browse"
+
+driver <- read_html(link)
+```
+
+
+```{r}
+# Extracting sub URLs
+# Here, tile-box is a parent class which holds the content in the nested class.
+# First, go inside the sub-class using html_children() and then fetch the URLs to each Skill page
+
+subURLs <- html_nodes(driver,'div.tile-box') %>% 
+            html_children() %>% 
+            html_attr('href')
+
+# Removing NA values and last `/browse` URL
+subURLs <- subURLs[!is.na(subURLs)][1:10]
+
+# Main URL - to complete the above URLs
+mainURL <- "https://www.pluralsight.com"
+```
+
+
+```{r}
+# This function fetches those four entities as you learned in the previous section of this guide
+entity <- function(s){
+
+  # Course Title
+  # Since Number of Courses may differ from Skill to Skill, therefore,
+  # we have done dynamic fetching of the course names
+
+  v <- html_nodes(s, "div.course-item__info") %>%
+    html_children()
+  titles <- gsub("<|>", "", str_extract(v[!is.na(str_match(v, "course-item__title"))], ">.*<"))
+
+  # Course Authors
+  authors <- html_nodes(s, "div.course--item__list.course-item__author") %>% html_text()
+
+  # Course Level
+  level <- html_nodes(s, "div.course--item__list.course-item__level") %>% html_text()
+
+  # Course Duration
+  duration <- html_nodes(s, "div.course--item__list.course-item__duration") %>% html_text()
+
+  # Creating a final DataFrame
+  courses <- data.frame(titles, authors, level, duration)
+
+  return(courses)
+}
+
+
+
+# A for loop which goes through all the URLs, fetch the entities and display them on the screen 
+
+i = 1
+for (i in 1:10) {
+  subDriver <- read_html(paste(mainURL, subURLs[i], sep = ""))
+  print(entity(subDriver))
+}
+```
+
+In the above code, understand the significance of html_children() and html_attr(). The code has elaborated comments to brief what each command is doing. The output of the above code will be similar to the previous section output and available for each skill.
+
+
+## XXX
+Getting started
+
+First let’s install the required packages and load them into the workspace.
+
+```{r}
+install.packages("RSelenium")
+install.packages("rvest")
+install.packages("tidyverse")
+
+```
+
+
+
+## jqQuantScripts
+
+- [jgQuantScripts/get-Financial-Stats-YHOO ](https://github.com/jgQuantScripts/get-Financial-Stats-YHOO/blob/main/getFinEx.R)
+- [https://github.com/jgQuantScripts](https://github.com/jgQuantScripts)
+
+```{r}
+require("rvest")
+ticker = "AAPL"
+
+getFinStatistics = function(ticker)
+{
+  url = paste0("https://finance.yahoo.com/quote/",ticker,
+               "/key-statistics?p=",ticker)
+  a <- read_html(url) # typically a list of head and body
+  
+  tbl = a %>% html_nodes("section") %>% html_nodes("div") %>% 
+        .[6] %>% html_nodes("table")
+  
+  valMsrs      = tbl %>% .[1] %>% html_table() %>% as.data.frame()
+  stkPrcHist   = tbl %>% .[2] %>% html_table() %>% as.data.frame()
+  shrStats     = tbl %>% .[3] %>% html_table() %>% as.data.frame()
+  divsSplits   = tbl %>% .[4] %>% html_table() %>% as.data.frame()
+  fiscYr       = tbl %>% .[5] %>% html_table() %>% as.data.frame()
+  prof         = tbl %>% .[6] %>% html_table() %>% as.data.frame()
+  mgtEff       = tbl %>% .[7] %>% html_table() %>% as.data.frame()
+  incSt        = tbl %>% .[8] %>% html_table() %>% as.data.frame()
+  balSheet     = tbl %>% .[9] %>% html_table() %>% as.data.frame()
+  cshFlow      = tbl %>%.[10] %>% html_table() %>% as.data.frame()
+  
+  info1 = rbind(stkPrcHist,shrStats,divsSplits,fiscYr,prof,
+                mgtEff,incSt,balSheet,cshFlow)
+  list(info1, valMsrs)
+}
+
+tmp = getFinStatistics("GOOGL")
+tbl1 = tmp[[1]]
+tbl2 = tmp[[2]]
+```
+
+## Download S&P 500 History
+
+```{r}
+install.packages("quantmod")
+require(quantmod)
+
+getSymbols("^GSPC", src = "yahoo",
+           from = as.Date("1960-01-04"), to = as.Date("2021-10-16"))
+
+GSPC_df = as.data.frame(GSPC$GSPC.Adjusted)
+GSPC_df$date = row.names(GSPC_df)
+
+head(GSPC_df)
+tail(GSPC_df)
+```
+
+### Aside on S&P500 Cumulative Performancen (Ovyer years of BOIC Operation)
+
+```{r}
+GSPC_df %>%
+  # filter(date=="1960-01-04" |
+   filter(date=="1994-02-22" | 
+   date>="2021-10-14")
+```
+```{r}
+(4438/471.46)^(1/27.5)-1
+```
+
